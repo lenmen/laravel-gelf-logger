@@ -4,6 +4,7 @@ namespace Hedii\LaravelGelfLogger\Tests;
 
 use Exception;
 use Gelf\Publisher;
+use Gelf\Transport\SslOptions;
 use Hedii\LaravelGelfLogger\GelfLoggerFactory;
 use Illuminate\Support\Facades\Log;
 use Monolog\Formatter\GelfMessageFormatter;
@@ -182,6 +183,75 @@ class GelfLoggerTest extends Orchestra
             $this->getAttribute($logger->getHandlers()[0]->getFormatter(), 'maxLength')
         );
     }
+
+	/** @test */
+	public function it_should_set_the_ssl_options_and_overrule_base_package_for_tcp_connections()
+	{
+		$this->app['config']->set('logging.channels.gelf', [
+			'driver' => 'custom',
+			'via' => GelfLoggerFactory::class,
+			'transport' => 'tcp',
+			'port' => 12202,
+			'ssl' => [
+				'verify_peer' => false,
+				'ca_file' => '/path/to/ca.pem',
+				'ciphers' => 'TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256',
+				'allow_self_signed' => true,
+			],
+		]);
+
+		$logger = Log::channel('gelf');
+		$publisher = $this->getAttribute($logger->getHandlers()[0], 'publisher');
+		$transport = $this->getAttribute($publisher->getTransports()[0], 'transport');
+
+		/** @var SslOptions $sslOptions */
+		$sslOptions = $this->getAttribute($transport, 'sslOptions');
+
+		$this->assertFalse($sslOptions->getVerifyPeer());
+		$this->assertTrue($sslOptions->getAllowSelfSigned());
+		$this->assertEquals('/path/to/ca.pem', $sslOptions->getCaFile());
+		$this->assertEquals('TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256', $sslOptions->getCiphers());
+	}
+
+
+	/** @test */
+	public function it_should_not_add_ssl_on_tcp_when_the_ssl_config_is_missing()
+	{
+		$this->app['config']->set('logging.channels.gelf', [
+			'driver' => 'custom',
+			'via' => GelfLoggerFactory::class,
+			'transport' => 'tcp',
+		]);
+
+		$logger = Log::channel('gelf');
+		$publisher = $this->getAttribute($logger->getHandlers()[0], 'publisher');
+		$transport = $this->getAttribute($publisher->getTransports()[0], 'transport');
+
+		$this->assertNull($this->getAttribute($transport, 'sslOptions'));
+	}
+
+	/** @test */
+	public function it_should_uses_the_default_ssl_options_on_ssl_port_without_specifying_ours()
+	{
+		$this->app['config']->set('logging.channels.gelf', [
+			'driver' => 'custom',
+			'via' => GelfLoggerFactory::class,
+			'transport' => 'tcp',
+			'port' => 12202,
+		]);
+
+		$logger = Log::channel('gelf');
+		$publisher = $this->getAttribute($logger->getHandlers()[0], 'publisher');
+		$transport = $this->getAttribute($publisher->getTransports()[0], 'transport');
+
+		/** @var SslOptions $sslOptions */
+		$sslOptions = $this->getAttribute($transport, 'sslOptions');
+
+		$this->assertTrue($sslOptions->getVerifyPeer());
+		$this->assertFalse($sslOptions->getAllowSelfSigned());
+		$this->assertNull($sslOptions->getCaFile());
+		$this->assertNull($sslOptions->getCiphers());
+	}
 
     /**
      * Get protected or private attribute from an object.

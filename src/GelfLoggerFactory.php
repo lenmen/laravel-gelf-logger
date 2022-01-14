@@ -5,6 +5,7 @@ namespace Hedii\LaravelGelfLogger;
 use Gelf\Publisher;
 use Gelf\Transport\AbstractTransport;
 use Gelf\Transport\IgnoreErrorTransportWrapper;
+use Gelf\Transport\SslOptions;
 use Gelf\Transport\UdpTransport;
 use Gelf\Transport\TcpTransport;
 use Illuminate\Contracts\Container\Container;
@@ -60,7 +61,8 @@ class GelfLoggerFactory
             $this->getTransport(
                 $config['transport'] ?? 'udp',
                 $config['host'] ?? '127.0.0.1',
-                $config['port'] ?? 12201
+                $config['port'] ?? 12201,
+	  	$config['ssl'] ?? null
             )
         );
 
@@ -89,13 +91,15 @@ class GelfLoggerFactory
      * @param string $transport
      * @param string $host
      * @param int $port
+	 * @param array|null $ssl
+	 *
      * @return \Gelf\Transport\AbstractTransport
      */
-    protected function getTransport(string $transport, string $host, int $port): AbstractTransport
+    protected function getTransport(string $transport, string $host, int $port, ?array $ssl = null): AbstractTransport
     {
         switch ($transport) {
             case 'tcp':
-                return new TcpTransport($host, $port);
+                return new TcpTransport($host, $port, $this->createSsl($ssl));
 
             default:
                 return new UdpTransport($host, $port);
@@ -163,4 +167,24 @@ class GelfLoggerFactory
     {
         return $this->app->bound('env') ? $this->app->environment() : 'production';
     }
+
+	/**
+	 * @param array|null $ssl
+	 *
+	 * @return SslOptions|null
+	 */
+	private function createSsl(?array $ssl): ?SslOptions
+	{
+		if (empty($ssl)) {
+			return null;
+		}
+
+		$sslOptions = new SslOptions();
+		$sslOptions->setAllowSelfSigned((bool) $ssl['allow_self_signed'] ?? false);
+		$sslOptions->setCaFile($ssl['ca_file'] ?? null);
+		$sslOptions->setCiphers($ssl['ciphers'] ?? null);
+		$sslOptions->setVerifyPeer((bool) $ssl['verify_peer'] ?? true);
+
+		return $sslOptions;
+	}
 }
